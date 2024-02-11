@@ -6,8 +6,79 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
-library(tidyverse)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message=FALSE,
+  warning=FALSE
+  )
 ```
+
+```{r}
+# load libraries
+library(tidyverse)
+library(caret)
+library(tidymodels)
+library(plotmo)
+library(kknn)
+library(FNN) 
+
+# read csv files 
+df_test = read_csv("./data/housing_test.csv") |> 
+  janitor::clean_names()
+  
+df_train = read_csv("./data/housing_training.csv") |> 
+  janitor::clean_names()
+
+```
+
+## (a) Lasso model on the training data
+I will use caret to fit a lasso model. 
+
+```{r}
+# set up 10-fold CV
+ctrl1 <- trainControl(
+  method = "cv",
+  number = 10
+)
+
+set.seed(1)
+
+lasso.fit <- 
+  train(
+    sale_price ~ .,
+    data = df_train,
+    method = "glmnet",
+    tuneGrid = expand.grid(
+      alpha = 1,
+      lambda = exp(seq(10, 0, length = 100))
+    ),
+    trControl = ctrl1
+  )
+
+# plot RMSE and lambda
+plot(lasso.fit, xTrans = log)
+
+# print the best tuning parameter
+lasso.fit$bestTune$lambda
+
+# Obtain the test error
+coef(lasso.fit$finalModel, s = lasso.fit$bestTune$lambda)
+
+lasso.pred <- predict(lasso.fit, newdata = df_test)
+
+mean((lasso.pred - pull(df_test, "sale_price"))^2)
+```
+
+The selected tuning parameter is $\lambda=$ 85.15256 ($\alpha=$ 1)  
+The test error is 438072450
+
+## (b) Elastic net model on the training data
+
+## (c) Partial least squares model on the training data
+
+## (d) The best model for response prediction
+
+## (e) Alternative meta-engine 
+
+
 
