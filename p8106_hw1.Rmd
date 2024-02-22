@@ -38,8 +38,9 @@ I will use caret to fit a lasso model.
 ```{r}
 # set up 10-fold CV
 ctrl1 <- trainControl(
-  method = "cv",
+  method = "repeatedcv",
   number = 10,
+  repeats = 5,
   selectionFunction = "best"
 )
 
@@ -77,8 +78,9 @@ Now, I will apply 1SE rule to obtain the most regularized model.
 ```{r}
 # apply 1SE rule 
 ctrl2 <- trainControl(
-  method = "cv",
+  method = "repeatedcv",
   number = 10,
+  repeats = 5,
   selectionFunction = "oneSE"
 )
 
@@ -171,13 +173,6 @@ Now, the optimal tuning parameters are $\lambda=$ 10860.95 and $\alpha=$ 0
 ## (c) Partial least squares model on the training data
 ```{r}
 # using caret
-# set cv
-ctrl3 <- trainControl(
-  method = "repeatedcv",
-  number = 10,
-  repeats = 5,
-  selectionFunction = "best"
-)
 
 # prepare x and y
 # training 
@@ -195,7 +190,7 @@ pls.fit <- train(
   x, y,
   method = "pls",
   tuneGrid = data.frame(ncomp = 8:38),
-  trControl = ctrl3,
+  trControl = ctrl1,
   preProcess = c("center", "scale")
 )
 
@@ -219,11 +214,26 @@ The test error is 451276530
 
 ## (d) The best model for response prediction
 ```{r}
+# compare models
 
+# resampling 
+resamp <- resamples(list(
+  lasso = lasso.fit,
+  lasso_oneSE = lasso.fit_oneSE,
+  elastic_net = enet.fit,
+  elastic_net_oneSE = enet.fit_oneSE,
+  pls = pls.fit
+))
+
+summary(resamp)
+
+# visualize RMSEs 
+bwplot(resamp, metric = "RMSE")
 ```
 
-
 ## (e) Alternative meta-engine 
+I used caret in (b), so I will retrain the model with tidymodels.
+
 
 
 
