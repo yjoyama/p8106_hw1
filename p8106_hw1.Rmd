@@ -21,6 +21,7 @@ library(tidymodels)
 library(plotmo)
 library(kknn)
 library(FNN) 
+library(pls)
 
 # read csv files 
 df_test = read_csv("./data/housing_test.csv") |> 
@@ -38,11 +39,13 @@ I will use caret to fit a lasso model.
 # set up 10-fold CV
 ctrl1 <- trainControl(
   method = "cv",
-  number = 10
+  number = 10,
+  selectionFunction = "best"
 )
 
 set.seed(1)
 
+# find lambda by CV
 lasso.fit <- 
   train(
     sale_price ~ .,
@@ -59,24 +62,166 @@ lasso.fit <-
 plot(lasso.fit, xTrans = log)
 
 # print the best tuning parameter
-lasso.fit$bestTune$lambda
+lasso.fit$bestTune
 
 # Obtain the test error
-coef(lasso.fit$finalModel, s = lasso.fit$bestTune$lambda)
-
 lasso.pred <- predict(lasso.fit, newdata = df_test)
-
-mean((lasso.pred - pull(df_test, "sale_price"))^2)
+mean((lasso.pred - pull(df_test, "sale_price"))^2) # test error
 ```
 
-The selected tuning parameter is $\lambda=$ 85.15256 ($\alpha=$ 1)  
-The test error is 438072450
+The selected tuning parameter is $\lambda=$ 85.15 ($\alpha=$ 1)  
+The test error is 438072450  
+
+Now, I will apply 1SE rule to obtain the most regularized model. 
+
+```{r}
+# apply 1SE rule 
+ctrl2 <- trainControl(
+  method = "cv",
+  number = 10,
+  selectionFunction = "oneSE"
+)
+
+set.seed(1)
+
+lasso.fit_oneSE <- 
+  train(
+    sale_price ~ .,
+    data = df_train,
+    method = "glmnet",
+    tuneGrid = expand.grid(
+      alpha = 1,
+      lambda = exp(seq(10, 0, length = 100))
+    ),
+    trControl = ctrl2
+  )
+
+# coefficients in the final model
+coef(lasso.fit_oneSE$finalModel, s = lasso.fit_oneSE$bestTune$lambda)
+```
+
+29 predictors are included in the model. 
 
 ## (b) Elastic net model on the training data
+```{r}
+# fit the model 
+set.seed(1)
+
+enet.fit <- 
+  train(
+    sale_price ~ .,
+    data = df_train,
+    method = "glmnet",
+    tuneGrid = expand.grid(
+      alpha = seq(0, 1, length = 20),
+      lambda = exp(seq(10, 0, length = 100))
+    ),
+    trControl = ctrl1
+  )
+
+# check the best tuning parameter
+enet.fit$bestTune
+
+# plot RMSE, lambda and alpha
+myCol <- rainbow(25)
+myPar <- list(
+  superpose.symbol = list(col = myCol),
+  superpose.line = list(col = myCol)
+)
+
+plot(enet.fit, par.settings = myPar, xTrans = log)
+
+# coefficients in the final model
+coef(enet.fit$finalModel, s = enet.fit$bestTune$lambda)
+
+# obtain predicted values
+enet.pred <- predict(enet.fit, newdata = df_test)
+
+# test error
+mean((enet.pred - pull(df_test, "sale_price"))^2)
+```
+
+The selected tuning parameter is $\lambda=$ 85.15 and $\alpha=$ 1 
+The test error is 438072450  
+
+1SE rule can be applied in $\lambda$s for each $\alpha$. 
+
+```{r}
+# apply 1SE rule 
+set.seed(1)
+
+enet.fit_oneSE <- 
+  train(
+    sale_price ~ .,
+    data = df_train,
+    method = "glmnet",
+    tuneGrid = expand.grid(
+      alpha = seq(0, 1, length = 20),                                    
+      lambda = exp(seq(10, 0, length = 100))
+    ),
+    trControl = ctrl2
+  )
+
+# check the tuning parameters
+enet.fit_oneSE$bestTune
+```
+
+Now, the optimal tuning parameters are $\lambda=$ 10860.95 and $\alpha=$ 0 
 
 ## (c) Partial least squares model on the training data
+```{r}
+# using caret
+# set cv
+ctrl3 <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 5,
+  selectionFunction = "best"
+)
+
+# prepare x and y
+# training 
+x <- model.matrix(sale_price ~ ., df_train)[, -1]
+y <- df_train$sale_price
+
+# test
+x2 <- model.matrix(sale_price ~ ., df_test)[, -1]
+y2 <- df_test$sale_price
+
+# fit a partial least squares model on the training data
+set.seed(2)
+
+pls.fit <- train(
+  x, y,
+  method = "pls",
+  tuneGrid = data.frame(ncomp = 8:38),
+  trControl = ctrl3,
+  preProcess = c("center", "scale")
+)
+
+summary(pls.fit)
+
+# obtain predicted values 
+pred.pls <- predict(
+  pls.fit, 
+  newdata = x2
+)
+
+# visualize RMSE and the number of components
+ggplot(pls.fit, highlight = T) + theme_bw()
+
+# test MSE
+mean((pred.pls - y2)^2)
+```
+
+11 components are included in the partial least squares model on the training data.   
+The test error is 451276530
 
 ## (d) The best model for response prediction
+```{r}
+
+```
+
 
 ## (e) Alternative meta-engine 
 
