@@ -70,8 +70,8 @@ lasso.pred <- predict(lasso.fit, newdata = df_test)
 mean((lasso.pred - pull(df_test, "sale_price"))^2) # test error
 ```
 
-The selected tuning parameter is $\lambda=$ 85.15 ($\alpha=$ 1)  
-The test error is 438072450  
+The selected tuning parameter is $\lambda=$ 62.89 ($\alpha=$ 1)  
+The test error is 440215066  
 
 Now, I will apply 1SE rule to obtain the most regularized model. 
 
@@ -100,9 +100,13 @@ lasso.fit_oneSE <-
 
 # coefficients in the final model
 coef(lasso.fit_oneSE$finalModel, s = lasso.fit_oneSE$bestTune$lambda)
+
+# Obtain the test error
+lasso.pred_oneSE <- predict(lasso.fit_oneSE, newdata = df_test)
+mean((lasso.pred_oneSE - pull(df_test, "sale_price"))^2) # test error
 ```
 
-29 predictors are included in the model. 
+36 predictors are included in the model. 
 
 ## (b) Elastic net model on the training data
 ```{r}
@@ -143,8 +147,8 @@ enet.pred <- predict(enet.fit, newdata = df_test)
 mean((enet.pred - pull(df_test, "sale_price"))^2)
 ```
 
-The selected tuning parameter is $\lambda=$ 85.15 and $\alpha=$ 1 
-The test error is 438072450  
+The selected tuning parameters are $\lambda=$ 580.35 and $\alpha=$ 0.0526 
+The test error is 438502352  
 
 1SE rule can be applied in $\lambda$s for each $\alpha$. 
 
@@ -166,9 +170,13 @@ enet.fit_oneSE <-
 
 # check the tuning parameters
 enet.fit_oneSE$bestTune
+
+# Obtain the test error
+enet.pred_oneSE <- predict(enet.fit_oneSE, newdata = df_test)
+mean((enet.pred_oneSE - pull(df_test, "sale_price"))^2) # test error
 ```
 
-Now, the optimal tuning parameters are $\lambda=$ 10860.95 and $\alpha=$ 0 
+Now, the optimal tuning parameters are $\lambda=$ 5924.60 and $\alpha=$ 0 
 
 ## (c) Partial least squares model on the training data
 ```{r}
@@ -231,8 +239,69 @@ summary(resamp)
 bwplot(resamp, metric = "RMSE")
 ```
 
+I choose the partial least square model as the best model in this practice because it has the smallest mean of RMSE among five models. 
+
 ## (e) Alternative meta-engine 
 I used caret in (b), so I will retrain the model with tidymodels.
+
+```{r}
+# set up cv (10 fold)
+set.seed(2)
+cv_folds <- vfold_cv(df_train, v = 10)
+
+# using tidymodels
+enet_spec <- linear_reg(penalty = tune(), mixture = tune()) |> 
+  set_engine("glmnet") |> 
+  set_mode("regression")
+
+# set the grid for lambda and alpha
+enet_grid_set <- parameters(
+  penalty(range = c(0, 10), trans = log_trans()), # lambda exp(0)-exp(10)
+  mixture(range = c(0, 1)) # alpha 0 - 1
+)
+
+# set levels for lambda and alpha
+enet_grid <- grid_regular(enet_grid_set, levels = c(100, 20))
+
+enet_workflow <- workflow() |> 
+  add_model(enet_spec) |> 
+  add_formula(sale_price ~ .)
+
+# use cv to fit the elastic net model
+enet_tune <- tune_grid(
+  enet_workflow,
+  resamples = cv_folds,
+  grid = enet_grid
+)
+
+# visualize RMSE and tuning parameters
+autoplot(enet_tune, metric = "rmse") +
+  theme(legend.position = "top") +
+  labs(color = "Mixing Percentage \n (Alpha Values)")
+
+# select the best tuning parameters
+enet_best <- select_best(enet_tune, metric = "rmse")
+enet_best
+
+# final model
+final_enet_spec <- enet_spec |> 
+  update(penalty = enet_best$penalty, mixture = enet_best$mixture)
+
+enet_fit <- fit(final_enet_spec, formula = sale_price ~ ., data = df_train)
+
+# get coefficients
+enet_model <- extract_fit_engine(enet_fit)
+coef(enet_model, s = enet_best$penalty)
+
+# obtain test RMSE
+enet.pred_tidy <- predict(enet_fit, new_data = df_test)
+# RMSE
+sqrt(mean((enet.pred_tidy[[1]] - pull(df_test, "sale_price"))^2))
+```
+
+The selected tuning parameters in this model are $\lambda=$ 642.04 and $\alpha=$ 0.0526  
+
+Although the $\alpha$ is the same, the selected $\lambda$ is different 580.35 in caret. This may be due to the different calclation methods used in each package.
 
 
 
