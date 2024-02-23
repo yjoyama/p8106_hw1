@@ -2,7 +2,7 @@
 title: "P8106 Homework1"
 author: "Yuki Joyama"
 date: "2024-02-10"
-output: github_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
